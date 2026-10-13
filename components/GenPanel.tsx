@@ -1,7 +1,9 @@
 "use client";
 
 import type { ProviderId } from "@/lib/providers";
+import { PROVIDERS } from "@/lib/providers";
 import { sanitizeLocal } from "@/lib/names";
+import { TMI_DURATIONS } from "@/lib/tempmailing";
 import type { Account } from "@/lib/types";
 import ProviderPicker from "./ProviderPicker";
 import { IconCheck, IconCopy, IconInbox, IconMail, IconShield, IconSparkles } from "./icons";
@@ -12,7 +14,9 @@ export default function GenPanel({
   provider,
   domain,
   wanted,
+  duration,
   onWanted,
+  onDuration,
   onProvider,
   onGenerate,
   onCopy,
@@ -23,7 +27,9 @@ export default function GenPanel({
   provider: ProviderId;
   domain: string;
   wanted: string;
+  duration: number;
   onWanted: (v: string) => void;
+  onDuration: (n: number) => void;
   onProvider: (p: ProviderId) => void;
   onGenerate: (p: ProviderId, name?: string) => Promise<void>;
   onCopy: (text: string, label: string) => void;
@@ -32,6 +38,9 @@ export default function GenPanel({
   const clean = sanitizeLocal(wanted);
   const tooShort = clean.length > 0 && clean.length < 4;
   const preview = clean ? `${clean}@${domain}` : `alamat acak@${domain}`;
+  /** tmi tidak menerima nama custom dan domainnya dirotasi server. */
+  const customName = PROVIDERS[provider].customName;
+  const ephemeral = PROVIDERS[provider].ephemeral;
 
   return (
     <div className="space-y-4">
@@ -48,6 +57,7 @@ export default function GenPanel({
           </div>
         </div>
 
+        {customName ? (
         <div className="mt-4">
           <label
             htmlFor="wanted-name"
@@ -81,6 +91,43 @@ export default function GenPanel({
               : `Jadi: ${preview} — huruf kecil, angka, tanda hubung atau garis bawah. Kosong = nama acak.`}
           </p>
         </div>
+        ) : (
+        <div className="mt-4 rounded-2xl bg-[var(--color-surface2)] p-3 text-xs text-[var(--color-muted)] ring-1 ring-[var(--color-line)]">
+          Provider ini menyalakan alamat dari sisinya: nama &amp; domain tidak bisa
+          dipilih (bentuknya acak, mis. <span className="font-mono">mv76dp25@…</span>),
+          dan alamat kedaluwarsa otomatis. Kuotanya 2 alamat/menit.
+        </div>
+        )}
+
+        {ephemeral && (
+          <div className="mt-4">
+            <span className="text-xs font-bold uppercase tracking-wide text-[var(--color-muted)]">
+              Umur alamat
+            </span>
+            <div className="mt-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Pilih umur alamat">
+              {TMI_DURATIONS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={duration === n}
+                  disabled={generating}
+                  onClick={() => onDuration(n)}
+                  className={`cursor-pointer rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition disabled:opacity-50 ${
+                    duration === n
+                      ? "bg-[var(--color-primary)] text-white ring-[var(--color-primary)]"
+                      : "bg-white text-[var(--color-muted)] ring-[var(--color-line)] hover:bg-[var(--color-surface2)]"
+                  }`}
+                >
+                  {n} mnt
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-muted)]">
+              Setelah itu alamat mati dan kotak masuknya tidak bisa dibuka lagi.
+            </p>
+          </div>
+        )}
 
         <div className="mt-4 border-t border-[var(--color-line)] pt-3">
           <ProviderPicker value={provider} onChange={onProvider} />

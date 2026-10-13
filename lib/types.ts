@@ -7,6 +7,8 @@ export type Account = {
   token: string;
   provider: ProviderId;
   createdAt: number;
+  /** epoch ms — hanya provider berumur (tmi). Provider lain: undefined. */
+  expiresAt?: number;
 };
 
 export type MailAddress = { address: string; name?: string };

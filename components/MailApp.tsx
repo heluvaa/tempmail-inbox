@@ -2,8 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Account, MessageSummary, Mode, Toast, ToastKind } from "@/lib/types";
-import { listMessages, provisionWithFallback, getDomain } from "@/lib/api";
-import { PROVIDER_ORDER, type ProviderId } from "@/lib/providers";
+import {
+  canDeleteMessages,
+  deleteMessageFor,
+  isExpired,
+  listMessagesForConditional,
+  provisionWithFallback,
+  secondsLeft,
+} from "@/lib/dispatch";
+import { TMI_DEFAULT_DURATION } from "@/lib/tempmailing";
+import { getDomain as getHydraDomain } from "@/lib/api";
+import { isHydraProvider, PROVIDER_ORDER, type ProviderId } from "@/lib/providers";
 import {
   loadAccounts,
   loadActiveId,
@@ -59,6 +68,10 @@ export default function MailApp() {
   const [hydrated, setHydrated] = useState(false);
   const [wanted, setWanted] = useState("");
   const [domain, setDomain] = useState("");
+  /** Umur alamat untuk provider berumur (tmi). */
+  const [duration, setDuration] = useState(TMI_DEFAULT_DURATION);
+  /** Jam berjalan untuk hitung mundur & deteksi kedaluwarsa. */
+  const [now, setNow] = useState(() => Date.now());
 
   const active = accounts.find((a) => a.id === activeId) ?? null;
   const fetching = useRef(false);
@@ -121,11 +134,18 @@ export default function MailApp() {
     savePreferredProvider(provider);
   }, [provider, hydrated]);
 
-  // Domain aktif diambil sekali per provider untuk pratinjau nama alamat.
+  // Domain aktif dipakai untuk pratinjau nama alamat — hanya masuk akal
+  // untuk provider yang nama + domain bisa ditentukan di sisi klien (mail.tm
+  // / mail.gw). Untuk tmi, domain dirotasi server dan baru muncul setelah
+  // alamat dibuat, jadi kita paksa kosong.
   useEffect(() => {
     let alive = true;
-    getDomain(provider)
-      .then((d) => alive && setDomain(d))
+    if (!isHydraProvider(provider)) {
+      setDomain("");
+      return;
+    }
+    getHydraDomain(provider)
+      .then((d: string) => alive && setDomain(d))
       .catch(() => alive && setDomain(""));
     return () => {
       alive = false;
@@ -138,7 +158,9 @@ export default function MailApp() {
       fetching.current = true;
       if (spinner) setRefreshing(true);
       try {
-        const list = await listMessages(account.provider, account.token);
+        const { messages: list } = await listMessagesForConditional(account);
+        // Jalur 304 tetap mengembalikan isi cache adapter, jadi list ini
+        // selalu benar — termasuk saat effect baru saja mereset state.
         setMessages(list);
         setInboxState("ready");
         setLastSync(Date.now());
@@ -153,8 +175,15 @@ export default function MailApp() {
   );
 
   // Polling inbox alamat aktif setiap 10 detik (hanya saat mode inbox).
+  // Alamat tmi yang sudah kedaluwarsa tidak polled lagi: upstream selalu
+  // membalas inbox kosong, dan itu membuat UI terlihat "sehat" padahal mati.
   useEffect(() => {
     if (!active || mode !== "inbox") {
+      setMessages([]);
+      setInboxState("idle");
+      return;
+    }
+    if (isExpired(active)) {
       setMessages([]);
       setInboxState("idle");
       return;
@@ -164,13 +193,37 @@ export default function MailApp() {
     setMessages([]);
     void fetchInbox(active, false);
     const timer = window.setInterval(() => {
-      if (alive) void fetchInbox(active, false);
+      if (!alive) return;
+      if (isExpired(active)) {
+        window.clearInterval(timer);
+        setInboxState("idle");
+        return;
+      }
+      void fetchInbox(active, false);
     }, POLL_MS);
     return () => {
       alive = false;
       window.clearInterval(timer);
     };
   }, [active, mode, fetchInbox]);
+
+  // Jam ticking: hanya saat alamat aktif punya masa berlaku, untuk hitung
+  // mundur + deteksi kedaluwarsa. Tidak masuk deps polling (kalau masuk,
+  // effect polling akan dibuang-pasang ulang tiap detik).
+  useEffect(() => {
+    if (!active?.expiresAt) return;
+    const tick = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(tick);
+  }, [active?.expiresAt]);
+
+  // Sekali saja per alamat: beri tahu saat umurnya habis.
+  const expiredWarned = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || !isExpired(active, now)) return;
+    if (expiredWarned.current === active.id) return;
+    expiredWarned.current = active.id;
+    pushToast("info", "Alamat ini sudah kedaluwarsa — buat yang baru.");
+  }, [active, now, pushToast]);
 
   const addAccounts = useCallback((incoming: Account[]) => {
     if (!incoming.length) return;
@@ -187,7 +240,7 @@ export default function MailApp() {
       const wantedName = (name ?? "").trim();
       setGenerating(true);
       try {
-        const r = await provisionWithFallback(p, wantedName || undefined, false);
+        const r = await provisionWithFallback(p, { local: wantedName || undefined, duration });
         if (r.provider !== p) pushToast("info", `${p} menolak server, pindah ke ${r.provider}`);
         setProvider(r.provider);
         const account: Account = {
@@ -197,6 +250,7 @@ export default function MailApp() {
           token: r.token,
           provider: r.provider,
           createdAt: Date.now(),
+          expiresAt: r.expiresAt,
         };
         addAccounts([account]);
         setActiveId(account.id);
@@ -213,7 +267,7 @@ export default function MailApp() {
         setGenerating(false);
       }
     },
-    [addAccounts, generating, pushToast],
+    [addAccounts, duration, generating, pushToast],
   );
 
   const copyText = useCallback(
@@ -335,12 +389,25 @@ export default function MailApp() {
 
       {openId && active ? (
         <MessageView
-          provider={active.provider}
-          token={active.token}
+          account={active}
           messageId={openId}
           seed={messages.find((m) => m.id === openId)}
           onBack={() => setOpenId(null)}
           onCopied={copyText}
+          onDelete={
+            canDeleteMessages(active)
+              ? async (id) => {
+                  const ok = await deleteMessageFor(active, id);
+                  if (ok) {
+                    setMessages((prev) => prev.filter((m) => m.id !== id));
+                    setOpenId(null);
+                    pushToast("ok", "Pesan dihapus dari kotak masuk");
+                  } else {
+                    pushToast("err", "Server menolak permintaan hapus.");
+                  }
+                }
+              : undefined
+          }
         />
       ) : (
         <div className="space-y-6">
@@ -363,7 +430,9 @@ export default function MailApp() {
               provider={provider}
               domain={domain}
               wanted={wanted}
+              duration={duration}
               onWanted={setWanted}
+              onDuration={setDuration}
               onProvider={setProvider}
               onGenerate={handleGenerate}
               onCopy={copyText}
@@ -389,6 +458,8 @@ export default function MailApp() {
                   account={active}
                   count={messages.length}
                   generating={generating}
+                  secondsLeft={secondsLeft(active, now)}
+                  expired={isExpired(active, now)}
                   onCopy={copyText}
                   onGenerate={() => void handleGenerate(active.provider)}
                 />

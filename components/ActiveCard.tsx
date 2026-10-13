@@ -1,28 +1,59 @@
 "use client";
 
 import type { Account } from "@/lib/types";
-import { IconCheck, IconCopy, IconKey, IconMail, IconSparkles } from "./icons";
+import { IconAlert, IconCheck, IconClock, IconCopy, IconKey, IconMail, IconSparkles } from "./icons";
+
+/** "12:07:45" / "45 dtk" — sisa umur alamat. */
+function humanize(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : m > 0 ? `${m}:${pad(sec)}` : `${sec} dtk`;
+}
 
 export default function ActiveCard({
   account,
   count,
   generating,
+  secondsLeft = null,
+  expired = false,
   onCopy,
   onGenerate,
 }: {
   account: Account;
   count: number;
   generating: boolean;
+  /** Sisa umur dalam detik; null = alamat tidak punya masa berlaku (mail.tm). */
+  secondsLeft?: number | null;
+  expired?: boolean;
   onCopy: (text: string, label: string) => void;
   onGenerate: () => void;
 }) {
+  const hasPassword = !!account.password;
   return (
     <section className="rounded-[var(--radius-blob)] bg-white p-5 ring-1 ring-[var(--color-line)]">
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-[color-mix(in_srgb,var(--color-primary)_12%,white)] px-2.5 py-1 text-xs font-bold text-[color-mix(in_srgb,var(--color-primary)_75%,black)]">
-          <span className="ring-live inline-block h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden />
-          Alamat aktif
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${
+            expired
+              ? "bg-[color-mix(in_srgb,var(--color-danger)_14%,white)] text-[color-mix(in_srgb,var(--color-danger)_70%,black)]"
+              : "bg-[color-mix(in_srgb,var(--color-primary)_12%,white)] text-[color-mix(in_srgb,var(--color-primary)_75%,black)]"
+          }`}
+        >
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${expired ? "bg-[var(--color-danger)]" : "ring-live bg-[var(--color-primary)]"}`}
+            aria-hidden
+          />
+          {expired ? "Alamat kedaluwarsa" : "Alamat aktif"}
         </span>
+        {secondsLeft !== null && !expired && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-surface2)] px-2.5 py-1 text-xs font-bold text-[var(--color-muted)] ring-1 ring-[var(--color-line)]">
+            <IconClock size={12} />
+            {humanize(secondsLeft)}
+          </span>
+        )}
         <span className="ml-auto text-xs font-semibold text-[var(--color-muted)]">
           {count} pesan
         </span>
@@ -44,6 +75,15 @@ export default function ActiveCard({
         </button>
       </div>
 
+      {expired && (
+        <p className="mt-2 flex items-start gap-1.5 rounded-xl bg-[color-mix(in_srgb,var(--color-danger)_8%,white)] p-3 text-xs text-[var(--color-muted)] ring-1 ring-[color-mix(in_srgb,var(--color-danger)_30%,white)]">
+          <IconAlert size={14} className="mt-0.5 shrink-0 text-[var(--color-danger)]" />
+          Alamat ini sudah mati dan kotak masuknya tidak bisa dibuka lagi. Buat alamat baru
+          untuk melanjutkan.
+        </p>
+      )}
+
+      {hasPassword && (
       <details className="mt-2">
         <summary className="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-[var(--color-muted)]">
           <IconKey size={13} /> Lihat password alamat ini
@@ -60,6 +100,7 @@ export default function ActiveCard({
           </button>
         </p>
       </details>
+      )}
 
       <button
         type="button"

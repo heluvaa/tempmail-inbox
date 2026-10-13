@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { MailError, provisionWithFallback } from "@/lib/api";
-import { PROVIDER_ORDER, bulkSpacingMs, type ProviderId } from "@/lib/providers";
+import { MailError } from "@/lib/api";
+import { provisionWithFallback } from "@/lib/dispatch";
+import { FALLBACK_ORDER, bulkSpacingMs, type ProviderId } from "@/lib/providers";
 import { randomLocal, sanitizeLocal, withSuffix } from "@/lib/names";
 import { fullDate } from "@/lib/format";
 import type { Account, BulkResult, LogLine } from "@/lib/types";
@@ -28,7 +29,7 @@ export default function BulkPanel({
   const [count, setCount] = useState(5);
   const [prefix, setPrefix] = useState("");
   const cleanPrefix = sanitizeLocal(prefix);
-  const [provider, setProvider] = useState<ProviderId>(PROVIDER_ORDER[0]);
+  const [provider, setProvider] = useState<ProviderId>("mailtm");
   const [lines, setLines] = useState<LogLine[]>([]);
   const [results, setResults] = useState<BulkResult[]>([]);
   const [running, setRunning] = useState(false);
@@ -69,11 +70,9 @@ export default function BulkPanel({
       const tag = `[${i + 1}/${total}]`;
       log(`${tag} Membuat tempmail…`);
       try {
-        const r = await provisionWithFallback(
-          activeProvider,
-          cleanPrefix ? withSuffix(cleanPrefix.slice(0, 26)) : randomLocal(),
-          false,
-        );
+        const r = await provisionWithFallback(activeProvider, {
+          local: cleanPrefix ? withSuffix(cleanPrefix.slice(0, 26)) : randomLocal(),
+        });
         if (r.provider !== activeProvider) {
           log(`${tag} ${failedProvider} ditolak server, pindah ke ${r.provider}.`, "warn");
           activeProvider = r.provider;
@@ -87,6 +86,7 @@ export default function BulkPanel({
           token: r.token,
           provider: r.provider,
           createdAt: Date.now(),
+          expiresAt: r.expiresAt,
         };
         created.push(account);
         streak = 0;
@@ -107,7 +107,9 @@ export default function BulkPanel({
           err instanceof MailError ? err.message : err instanceof Error ? err.message : "Gagal";
         if (err instanceof MailError && err.switchable && err.provider) {
           failedProvider = err.provider;
-          activeProvider = PROVIDER_ORDER.find((p) => p !== (err as MailError).provider) ?? activeProvider;
+          // Fallback hanya boleh di antara dua provider berbentuk sama.
+          activeProvider =
+            FALLBACK_ORDER.find((p) => p !== (err as MailError).provider) ?? activeProvider;
         }
         streak += 1;
         setResults((prev) => [
@@ -262,7 +264,14 @@ export default function BulkPanel({
         </div>
 
         <div className="mt-4 border-t border-[var(--color-line)] pt-3">
-          <ProviderPicker value={provider} onChange={setProvider} compact={running} />
+          {/* Kuota tmi 2 alamat/menit — antrean bulk tidak mungkin dijalankan di
+              sana, jadi daftar provider dikunci ke bentuk hydra. */}
+          <ProviderPicker
+            value={provider}
+            onChange={setProvider}
+            compact={running}
+            only={["mailtm", "mailgw"]}
+          />
         </div>
 
         <p className="mt-3 flex items-start gap-1.5 rounded-xl bg-[color-mix(in_srgb,var(--color-sun)_22%,white)] p-3 text-xs text-[color-mix(in_srgb,var(--color-ink)_85%,black)]">

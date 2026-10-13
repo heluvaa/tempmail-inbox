@@ -1,5 +1,5 @@
 /**
- * Proxy API ke penyedia tempmail (mail.tm / mail.gw).
+ * Proxy API ke penyedia tempmail yang tanpa CORS (mail.tm / mail.gw).
  *
  * Permukaan API keduanya identik (API Platform / Hydra), jadi satu route
  * menangani semua lewat segmen pertama = id provider:
@@ -22,6 +22,14 @@ const PROVIDERS: Record<string, { base: string; ua: string }> = {
   mailtm: { base: "https://api.mail.tm", ua: "tempmail-inbox/2.0 (mail.tm)" },
   mailgw: { base: "https://api.mail.gw", ua: "tempmail-inbox/2.0 (mail.gw)" },
 };
+
+/**
+ * tempmail.ing TIDAK diproksikan. Header CORS-nya `access-control-allow-origin: *`
+ * (terverifikasi) dan browser memanggilnya langsung — lihat lib/tempmailing.ts.
+ * Yang lewat server hanya probe kesehatan, memakai /health milik mereka supaya
+ * tidak menghabiskan kuota generate (2/menit per IP).
+ */
+const TMI = { base: "https://api.tempmail.ing", ua: "tempmail-inbox/2.0 (tempmail.ing)" };
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -59,14 +67,41 @@ async function probe(base: string, ua: string) {
   }
 }
 
+/** Probe tmi: /health saja — tidak menyentuh /api/generate yang dibatasi 2/menit. */
+async function probeTmi() {
+  try {
+    const res = await fetch(`${TMI.base}/health`, {
+      headers: { Accept: "application/json", "User-Agent": TMI.ua },
+      cache: "no-store",
+      signal: AbortSignal.timeout(9_000),
+    });
+    const text = await res.text();
+    let status = "";
+    try {
+      status = String(JSON.parse(text)?.status ?? "");
+    } catch {
+      status = "";
+    }
+    return {
+      ok: res.ok && status === "ok",
+      status: res.status,
+      domains: 0,
+      detail: res.ok ? (status === "ok" ? "" : `status=${status || "?"}`) : text.slice(0, 160),
+    };
+  } catch (err) {
+    return { ok: false, status: 0, domains: 0, detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function health() {
-  const results = await Promise.all(
-    Object.entries(PROVIDERS).map(async ([id, { base, ua }]) => ({
+  const results = await Promise.all([
+    ...Object.entries(PROVIDERS).map(async ([id, { base, ua }]) => ({
       provider: id,
       base,
       ...(await probe(base, ua)),
     })),
-  );
+    { provider: "tmi", base: TMI.base, ...(await probeTmi()) },
+  ]);
   const usable = results.filter((r) => r.ok).map((r) => r.provider);
   return NextResponse.json(
     { checkedAt: new Date().toISOString(), usable, results },

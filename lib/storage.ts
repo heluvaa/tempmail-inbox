@@ -1,5 +1,5 @@
 import type { Account } from "./types";
-import { isProviderId, PROVIDER_ORDER, type ProviderId } from "./providers";
+import { isProviderId, PROVIDERS, PROVIDER_ORDER, type ProviderId } from "./providers";
 
 const KEY_ACCOUNTS = "tempmail.accounts.v2";
 const KEY_ACTIVE = "tempmail.active.v2";
@@ -14,14 +14,19 @@ function normalize(raw: unknown): Account | null {
   const a = raw as Partial<Account>;
   if (typeof a.address !== "string" || typeof a.token !== "string" || typeof a.id !== "string")
     return null;
-  return {
+  const provider = isProviderId(a.provider) ? a.provider : PROVIDER_ORDER[0];
+  const out: Account = {
     id: a.id,
     address: a.address,
     password: typeof a.password === "string" ? a.password : "",
     token: a.token,
-    provider: isProviderId(a.provider) ? a.provider : PROVIDER_ORDER[0],
+    provider,
     createdAt: typeof a.createdAt === "number" ? a.createdAt : Date.now(),
   };
+  // Hanya provider berumur (tmi) yang punya masa berlaku; alamat mail.tm
+  // lama yang kebetulan punya field ini tidak boleh ikut dianggap berumur.
+  if (typeof a.expiresAt === "number" && PROVIDERS[provider].ephemeral) out.expiresAt = a.expiresAt;
+  return out;
 }
 
 function read(key: string): unknown[] {

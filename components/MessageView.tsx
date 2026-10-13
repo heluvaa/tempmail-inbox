@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ProviderId } from "@/lib/providers";
-import type { MessageDetail } from "@/lib/types";
+import type { Account, MessageDetail } from "@/lib/types";
 import {
   extractCodes,
   extractLinks,
@@ -18,18 +17,23 @@ import {
   IconCopy,
   IconKey,
   IconLink,
+  IconTrash,
 } from "./icons";
 
 type Props = {
-  provider: ProviderId;
-  token: string;
+  account: Account;
   messageId: string;
   seed?: Partial<MessageDetail>;
   onBack: () => void;
   onCopied: (text: string, label: string) => void;
+  /**
+   * Hapus satu pesan dari sisi server (hanya provider yang mendukung: tmi).
+   * Absen = tombol tidak muncul.
+   */
+  onDelete?: (id: string) => Promise<void>;
 };
 
-export default function MessageView({ provider, token, messageId, seed, onBack, onCopied }: Props) {
+export default function MessageView({ account, messageId, seed, onBack, onCopied, onDelete }: Props) {
   const [msg, setMsg] = useState<MessageDetail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [tab, setTab] = useState<"html" | "text">("html");
@@ -41,8 +45,8 @@ export default function MessageView({ provider, token, messageId, seed, onBack, 
     setState("loading");
     (async () => {
       try {
-        const { getMessage } = await import("@/lib/api");
-        const detail = await getMessage(provider, token, messageId);
+        const { getMessageFor } = await import("@/lib/dispatch");
+        const detail = await getMessageFor(account, messageId);
         if (!alive) return;
         setMsg(detail);
         setState("ready");
@@ -60,7 +64,7 @@ export default function MessageView({ provider, token, messageId, seed, onBack, 
     return () => {
       alive = false;
     };
-  }, [provider, token, messageId, seed]);
+  }, [account, messageId, seed]);
 
   useEffect(() => {
     headingRef.current?.focus();
@@ -92,6 +96,17 @@ export default function MessageView({ provider, token, messageId, seed, onBack, 
         <IconBack size={18} />
         Kembali ke inbox
       </button>
+
+      {onDelete && (
+        <button
+          type="button"
+          onClick={() => void onDelete(messageId)}
+          className="ml-2 inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-sm font-bold text-[var(--color-danger)] ring-1 ring-[color-mix(in_srgb,var(--color-danger)_30%,white)] transition hover:bg-[color-mix(in_srgb,var(--color-danger)_8%,white)]"
+        >
+          <IconTrash size={16} />
+          Hapus pesan
+        </button>
+      )}
 
       {state === "loading" && (
         <div className="space-y-3 rounded-[var(--radius-blob)] bg-white p-5 ring-1 ring-[var(--color-line)]">

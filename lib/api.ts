@@ -1,27 +1,16 @@
-import type { ProviderId } from "./providers";
-import { PROVIDERS, PROVIDER_ORDER } from "./providers";
+import { MailError } from "./errors";
+import { isProviderId, type HydraProviderId, type ProviderId } from "./providers";
+import { FALLBACK_ORDER, PROVIDERS, PROVIDER_ORDER } from "./providers";
 import { randomLocal, sanitizeLocal, withSuffix } from "./names";
 import type { Account, MessageDetail, MessageSummary } from "./types";
+
+export { MailError } from "./errors";
 
 /**
  * Klien untuk proxy kita sendiri (/api/mail/<provider>/*). Semua panggilan
  * same-origin, jadi tidak ada masalah CORS. Token hanya lewat header
  * Authorization dan tidak pernah ditulis ke console.
  */
-export class MailError extends Error {
-  status: number;
-  provider?: string;
-  /** upstream menolak server ini (blokir IP) — pindah provider, jangan retry */
-  switchable: boolean;
-  constructor(message: string, status: number, provider?: string, switchable = false) {
-    super(message);
-    this.name = "MailError";
-    this.status = status;
-    this.provider = provider;
-    this.switchable = switchable;
-  }
-}
-
 type Members<T> = { "hydra:member"?: T[]; "hydra:totalItems"?: number };
 
 function asMembers<T>(data: unknown): T[] {
@@ -34,7 +23,7 @@ function asMembers<T>(data: unknown): T[] {
 }
 
 async function call<T>(
-  provider: ProviderId,
+  provider: HydraProviderId,
   path: string,
   init: { method?: string; body?: unknown; token?: string } = {},
 ): Promise<T> {
@@ -79,7 +68,7 @@ async function call<T>(
 /** Domain per provider di-cache: tiap akun hemat 1 request dari kuota 30/menit. */
 const domainCache = new Map<ProviderId, string>();
 
-export async function getDomain(provider: ProviderId, force = false): Promise<string> {
+export async function getDomain(provider: HydraProviderId, force = false): Promise<string> {
   const cached = !force ? domainCache.get(provider) : undefined;
   if (cached) return cached;
   const data = await call<unknown>(provider, "domains");
@@ -90,14 +79,14 @@ export async function getDomain(provider: ProviderId, force = false): Promise<st
   return active.domain;
 }
 
-export async function createAccount(provider: ProviderId, address: string, password: string) {
+export async function createAccount(provider: HydraProviderId, address: string, password: string) {
   return call<{ id: string; address: string }>(provider, "accounts", {
     method: "POST",
     body: { address, password },
   });
 }
 
-export async function getToken(provider: ProviderId, address: string, password: string): Promise<string> {
+export async function getToken(provider: HydraProviderId, address: string, password: string): Promise<string> {
   const data = await call<{ token?: string }>(provider, "token", {
     method: "POST",
     body: { address, password },
@@ -107,7 +96,7 @@ export async function getToken(provider: ProviderId, address: string, password: 
 }
 
 export async function listMessages(
-  provider: ProviderId,
+  provider: HydraProviderId,
   token: string,
   page = 1,
 ): Promise<MessageSummary[]> {
@@ -116,7 +105,7 @@ export async function listMessages(
 }
 
 export async function getMessage(
-  provider: ProviderId,
+  provider: HydraProviderId,
   token: string,
   id: string,
 ): Promise<MessageDetail> {
@@ -125,10 +114,10 @@ export async function getMessage(
 
 /** Buat alamat baru di satu provider. Password dibuat di sisi klien. */
 export async function provisionAt(
-  provider: ProviderId,
+  provider: HydraProviderId,
   local?: string,
   unique = false,
-): Promise<{ address: string; password: string; token: string; provider: ProviderId }> {
+): Promise<{ address: string; password: string; token: string; provider: HydraProviderId }> {
   const domain = await getDomain(provider);
   const base = sanitizeLocal(local ?? "");
   let name: string;
@@ -163,13 +152,13 @@ export async function provisionAt(
  * (blokir IP / 5xx / 429 / jaringan), bukan kalau ditolak karena data
  * (mis. alamat sudah dipakai).
  */
-export async function provisionWithFallback(
-  preferred: ProviderId = PROVIDER_ORDER[0],
+export async function provisionHydraWithFallback(
+  preferred: HydraProviderId = PROVIDER_ORDER[0] as HydraProviderId,
   local?: string,
   unique = false,
-): Promise<{ address: string; password: string; token: string; provider: ProviderId }> {
-  const order = [preferred, ...PROVIDER_ORDER.filter((p) => p !== preferred)];
-  const errors = new Map<ProviderId, MailError>();
+): Promise<{ address: string; password: string; token: string; provider: HydraProviderId }> {
+  const order = [preferred, ...FALLBACK_ORDER.filter((p) => p !== preferred)];
+  const errors = new Map<HydraProviderId, MailError>();
   let primary: MailError | null = null;
 
   for (const p of order) {
@@ -196,6 +185,13 @@ export async function provisionWithFallback(
   throw first;
 }
 
+/**
+ * Re-export nama lama. Komponen yang dulu memakai `provisionWithFallback`
+ * dari "@/lib/api" sekarang lewat router pusat ("@/lib/dispatch") supaya
+ * tmi juga bisa dipilih tanpa ada dua tempat yang punya logika sendiri.
+ */
+export { provisionWithFallback } from "./dispatch";
+
 export type HealthResult = {
   checkedAt: string;
   usable: ProviderId[];
@@ -208,8 +204,13 @@ export async function fetchHealth(): Promise<HealthResult> {
   return (await res.json()) as HealthResult;
 }
 
+/**
+ * Bentuk minimum akun yang sah. Provider mail.tm butuh token; tmi tidak
+ * punya kredensial sama sekali (inbox dibuka dengan alamat saja), jadi token
+ * cukup ada sebagai string — kosong pun valid.
+ */
 export function isAccount(a: Account | undefined | null): a is Account {
-  return !!a && typeof a.address === "string" && typeof a.token === "string";
+  return !!a && typeof a.address === "string" && typeof a.token === "string" && isProviderId(a.provider);
 }
 
 function randToken(len: number): string {

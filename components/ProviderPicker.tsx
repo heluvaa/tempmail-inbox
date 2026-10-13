@@ -7,18 +7,35 @@ import { IconAlert, IconCheck, IconRefresh } from "./icons";
 
 type Health = Awaited<ReturnType<typeof fetchHealth>> | null;
 
+const HINT: Partial<Record<ProviderId, string>> = {
+  tmi: "tempmail.ing: alamat dari server (nama tidak bisa dipilih), kedaluwarsa 5–60 menit",
+};
+
 export default function ProviderPicker({
   value,
   onChange,
   compact = false,
+  disabled = false,
+  only,
 }: {
   value: ProviderId;
   onChange: (p: ProviderId) => void;
   compact?: boolean;
+  /** Kunci pilihan (mis. bulk sedang jalan atau mode hanya-membaca). */
+  disabled?: boolean;
+  /** Batasi daftar (mis. bulk hanya hydra — kuota tmi 2/menit tidak masuk akal untuk antrean). */
+  only?: ProviderId[];
 }) {
   const [health, setHealth] = useState<Health>(null);
   const [probing, setProbing] = useState(false);
   const [failed, setFailed] = useState(false);
+
+  const list = only?.length ? PROVIDER_ORDER.filter((x) => only.includes(x)) : PROVIDER_ORDER;
+  /**
+   * `only` biasanya literal inline (referensi baru tiap render). Dijadikan
+   * string dulu supaya probe tidak ulang terus dan onChange tidak di-reset.
+   */
+  const onlyKey = only?.join(",") ?? "";
 
   const probe = useCallback(async () => {
     setProbing(true);
@@ -26,14 +43,17 @@ export default function ProviderPicker({
     try {
       const h = await fetchHealth();
       setHealth(h);
-      // Kalau provider terpilih ternyata tidak bisa dipakai, lompat ke yang hidup.
-      if (h.usable.length && !h.usable.includes(value)) onChange(h.usable[0] as ProviderId);
+      // Kalau provider terpilih ternyata tidak bisa dipakai, lompat ke yang
+      // hidup — tetapi hanya di antara provider yang boleh dipilih di sini.
+      const allowList = onlyKey ? onlyKey.split(",") : null;
+      const allowed = allowList ? h.usable.filter((x) => allowList.includes(x)) : h.usable;
+      if (allowed.length && !allowed.includes(value)) onChange(allowed[0] as ProviderId);
     } catch {
       setFailed(true);
     } finally {
       setProbing(false);
     }
-  }, [onChange, value]);
+  }, [onChange, onlyKey, value]);
 
   useEffect(() => {
     void probe();
@@ -47,7 +67,7 @@ export default function ProviderPicker({
         Provider
       </span>
       <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Pilih penyedia email">
-        {PROVIDER_ORDER.map((id) => {
+        {list.map((id) => {
           const meta = PROVIDERS[id];
           const row = health?.results.find((r) => r.provider === id);
           const dead = health ? row && !row.ok : false;
@@ -58,9 +78,10 @@ export default function ProviderPicker({
               type="button"
               role="radio"
               aria-checked={selected}
+              disabled={disabled}
               onClick={() => onChange(id)}
               title={row ? `${meta.base} · HTTP ${row.status}` : meta.base}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition ${
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition disabled:cursor-not-allowed disabled:opacity-50 ${
                 selected
                   ? "bg-[var(--color-primary)] text-white ring-[var(--color-primary)]"
                   : "bg-white text-[var(--color-muted)] ring-[var(--color-line)] hover:bg-[var(--color-surface2)]"
@@ -76,6 +97,10 @@ export default function ProviderPicker({
           );
         })}
       </div>
+
+      {HINT[value] && !disabled && (
+        <p className="w-full text-[11px] leading-snug text-[var(--color-muted)]">{HINT[value]}</p>
+      )}
 
       {!compact && (
         <button
