@@ -53,6 +53,7 @@ async function proxy(request: Request, ctx: Ctx) {
       redirect: "follow",
     });
   } catch (err) {
+    console.error("[mail-proxy] fetch failed", target, err);
     return NextResponse.json(
       {
         message: "Tidak bisa menghubungi server email. Coba lagi.",
@@ -63,6 +64,7 @@ async function proxy(request: Request, ctx: Ctx) {
   }
 
   const text = await res.text();
+  console.log("[mail-proxy]", request.method, target, "->", res.status, "bytes:", text.length);
   return new NextResponse(text || "{}", {
     status: res.status,
     headers: {
