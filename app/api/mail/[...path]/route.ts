@@ -11,8 +11,8 @@ const UPSTREAM = "https://api.mail.tm";
 const ALLOWED = new Set(["domains", "accounts", "token", "messages"]);
 const MAX_BODY = 8 * 1024;
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
@@ -52,9 +52,12 @@ async function proxy(request: Request, ctx: Ctx) {
       cache: "no-store",
       redirect: "follow",
     });
-  } catch {
+  } catch (err) {
     return NextResponse.json(
-      { message: "Tidak bisa menghubungi server email. Coba lagi." },
+      {
+        message: "Tidak bisa menghubungi server email. Coba lagi.",
+        detail: err instanceof Error ? err.message : String(err),
+      },
       { status: 502 },
     );
   }
