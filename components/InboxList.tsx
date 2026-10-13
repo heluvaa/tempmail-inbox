@@ -2,7 +2,7 @@
 
 import type { MessageSummary } from "@/lib/types";
 import { clockTime, relativeTime } from "@/lib/format";
-import { IconClock, IconMail, IconRefresh } from "./icons";
+import { IconClock, IconMail, IconRefresh, IconSparkles } from "./icons";
 
 function initials(msg: MessageSummary): string {
   const name = msg.from?.name?.trim() || msg.from?.address || "?";
@@ -15,16 +15,20 @@ export default function InboxList({
   active,
   refreshing,
   lastSync,
+  address,
   onOpen,
   onRefresh,
+  onGenerate,
 }: {
   messages: MessageSummary[];
   state: "idle" | "loading" | "ready" | "error";
   active: boolean;
   refreshing: boolean;
   lastSync: number | null;
+  address: string | null;
   onOpen: (id: string) => void;
   onRefresh: () => void;
+  onGenerate: () => void;
 }) {
   const unread = messages.filter((m) => !m.seen).length;
 
@@ -56,9 +60,22 @@ export default function InboxList({
           <IconMail size={34} className="mx-auto text-[var(--color-primary)]" />
           <p className="mt-3 font-bold">Belum ada alamat aktif</p>
           <p className="text-sm text-[var(--color-muted)]">
-            Tekan <b>Buat alamat baru</b> untuk mulai menerima email.
+            Buat satu alamat dulu, atau pilih salah satu dari riwayat di bawah.
           </p>
+          <button
+            type="button"
+            onClick={onGenerate}
+            className="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-[var(--color-primary)] px-5 py-3 text-sm font-bold text-white transition hover:bg-[var(--color-primary2)]"
+          >
+            <IconSparkles size={16} /> Buat tempmail
+          </button>
         </div>
+      )}
+
+      {address && (
+        <p className="truncate rounded-xl bg-[var(--color-surface2)] px-3 py-2 text-center font-mono text-xs font-bold text-[var(--color-muted)] ring-1 ring-[var(--color-line)]">
+          kotak masuk: {address}
+        </p>
       )}
 
       {active && state === "loading" && messages.length === 0 && (

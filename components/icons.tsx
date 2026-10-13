@@ -148,6 +148,54 @@ export function IconPlus({ size = 20, className }: P) {
   );
 }
 
+export function IconBulk({ size = 20, className }: P) {
+  return (
+    <svg {...base(size)} className={className}>
+      <rect x="3" y="4" width="7" height="7" rx="2" />
+      <rect x="14" y="4" width="7" height="7" rx="2" />
+      <rect x="3" y="14" width="7" height="7" rx="2" />
+      <path d="M14 15.5h7M14 19.5h4.5" />
+    </svg>
+  );
+}
+
+export function IconInbox({ size = 20, className }: P) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M3 13.5 5.6 5.4A2 2 0 0 1 7.5 4h9a2 2 0 0 1 1.9 1.4L21 13.5" />
+      <path d="M3 13.5h5l1.2 2.6h5.6l1.2-2.6H21V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5.5Z" />
+    </svg>
+  );
+}
+
+export function IconDownload({ size = 20, className }: P) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M12 3v11" />
+      <path d="m7.5 10.5 4.5 4 4.5-4" />
+      <path d="M4 18.5h16" />
+    </svg>
+  );
+}
+
+export function IconTerminal({ size = 20, className }: P) {
+  return (
+    <svg {...base(size)} className={className}>
+      <rect x="2.5" y="4" width="19" height="16" rx="3" />
+      <path d="m7 10 2.5 2L7 14" />
+      <path d="M12.5 14.5h4" />
+    </svg>
+  );
+}
+
+export function IconStop({ size = 20, className }: P) {
+  return (
+    <svg {...base(size)} className={className}>
+      <rect x="6" y="6" width="12" height="12" rx="2.5" />
+    </svg>
+  );
+}
+
 export function IconAlert({ size = 20, className }: P) {
   return (
     <svg {...base(size)} className={className}>

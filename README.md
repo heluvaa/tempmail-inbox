@@ -1,46 +1,68 @@
-# Tempmail Inbox
+# Tempmail Suite
 
-Web inbox email sementara. Buat alamat sekali pakai, terima pesan langsung di browser — tanpa daftar, tanpa email pribadi.
+Generator email sementara + pembaca inbox. Buat satu alamat, buat banyak sekaligus
+(hingga 20) dengan log langsung, atau baca kotak masuknya di browser — tanpa daftar.
 
-Ditenagai API publik [mail.tm](https://mail.tm) lewat proxy server sendiri (browser tidak bisa memanggil mail.tm langsung karena tidak ada header CORS).
+Ditenagai API publik [mail.tm](https://mail.tm) dan [mail.gw](https://mail.gw) lewat
+proxy server sendiri (browser tidak bisa memanggil keduanya langsung karena tidak ada
+header CORS).
 
 ## Fitur
 
-- **Buat alamat 1 klik** — domain diambil otomatis dari domain `isActive: true`.
-- **Salin alamat & password** — password ditampilkan dan bisa disalin.
-- **Inbox otomatis** — polling tiap **10 detik**, hanya untuk alamat yang aktif.
-- **Riwayat multi-alamat** — tersimpan di `localStorage` (alamat, password, token, waktu dibuat); bisa ditandai aktif, dihapus satu, atau dihapus semua.
-- **Baca isi lengkap** — tampilan HTML (di-sanitize) dan teks, plus tombol **ekstrak link** dan **deteksi kode OTP**.
-- **Mobile-first**, Bahasa Indonesia, tema playful (grafik flat, tanpa library UI).
+- **Pilih mode** — tiga kartu di beranda: Generator, Bulk, Inbox. Mode tersimpan di
+  URL hash (`#/gen`, `#/bulk`, `#/inbox`) sehingga bisa ditaut langsung dan tombol
+  back browser tetap berfungsi.
+- **Generator** — satu alamat baru sekali tekan, lengkap dengan alamat aktif, sandi,
+  tombol salin, dan lompat ke inbox.
+- **Bulk hingga 20 alamat** — antrean otomatis dengan jarak antar alamat (menghormati
+  rate limit ±30 request/menit dari provider), log progres langsung, daftar hasil,
+  salin semua sebagai teks, dan unduh JSON.
+- **Inbox otomatis** — polling 10 detik untuk alamat aktif, tampil HTML (disanitize)
+  dan teks, ekstrak link, deteksi kode OTP.
+- **Riwayat multi-alamat** — alamat, sandi, dan token di `localStorage` browser saja;
+  bisa ditandai aktif, hapus satu, atau hapus semua.
+- **Pemilihan + status provider** — chip mail.tm / mail.gw dengan probe server-side.
+  Kalau satu provider menolak, pembuatan alamat pindah otomatis ke provider lain.
 
 ## Keamanan
 
-- Token JWT **tidak pernah** ditulis ke `console`, dan tidak pernah disimpan di server.
+- Token JWT **tidak pernah** ditulis ke `console` dan tidak pernah disimpan di server.
+- Token tidak ikut disalin/diunduh dari panel bulk — cukup alamat + sandi.
 - Riwayat alamat hanya di `localStorage` browser pengguna.
-- HTML email yang dirender sudah dibersihkan: `<script>`, `<iframe>`, event handler (`on*`), dan URL `javascript:`/`data:` dibuang sebelum masuk DOM.
+- HTML email disanitize sebelum masuk DOM: `<script>`, `<iframe>`, event handler
+  (`on*`), dan URL `javascript:`/`data:` dibuang.
+- Proxy hanya meneruskan segmen yang diizinkan (`domains`, `accounts`, `token`,
+  `messages`). Path lain ditolak `403`.
 
 > ⚠️ Jangan pakai untuk data sensitif. Alamat sementara bisa hilang kapan saja.
+>
+> Alat ini hanya membuat dan membaca email sementara. Ia **tidak** mengaktifkan
+> langganan premium aplikasi apa pun.
 
 ## Struktur
 
 ```
 app/
-  layout.tsx                 # shell + font + dekor blob
-  page.tsx                   # render MailApp
-  globals.css                # design token (Tailwind 4 @theme)
+  layout.tsx                   # shell + font + dekor blob
+  page.tsx                     # render MailApp
+  globals.css                  # design token (Tailwind 4 @theme)
   not-found.tsx
-  api/mail/[...path]/route.ts  # PROXY ke api.mail.tm (server-side)
+  api/mail/[...path]/route.ts  # PROXY multi-provider + probe /health
 components/
-  MailApp.tsx                # orkestrator: state, polling, riwayat, aksi
-  ActiveCard.tsx             # alamat aktif + tombol generate/salin
-  InboxList.tsx              # daftar pesan + status
-  MessageView.tsx            # isi email + ekstrak link/kode
-  HistoryPanel.tsx           # riwayat multi-alamat
+  MailApp.tsx                  # orkestrator: state, routing hash, polling, riwayat
+  ModeMenu.tsx                 # kartu pilihan mode
+  GenPanel.tsx                 # generator satu alamat
+  BulkPanel.tsx                # generator massal + log + unduh JSON
+  LogPanel.tsx                 # konsol progres
+  ProviderPicker.tsx           # chip provider + status + cek ulang
+  ActiveCard.tsx, InboxList.tsx, MessageView.tsx, HistoryPanel.tsx
   Faq.tsx, Toaster.tsx, icons.tsx
 lib/
-  api.ts                     # klien proxy same-origin
-  storage.ts                 # localStorage (accounts, active)
-  format.ts                  # waktu, ekstrak link/kode, sanitasi HTML
+  api.ts                       # klien proxy same-origin + fallback provider
+  providers.ts                 # registry provider, urutan, jarak antrean bulk
+  storage.ts                   # localStorage (accounts, aktif, mode, provider)
+  names.ts                     # pembuat nama alamat acak
+  format.ts                    # waktu, ekstrak link/kode, sanitasi HTML
   types.ts
 ```
 
@@ -53,7 +75,8 @@ npm run dev     # http://localhost:3200
 
 ## Deploy
 
-Proyek ini siap deploy ke Vercel tanpa konfigurasi tambahan. Route `app/api/mail/[...path]/route.ts` berjalan sebagai serverless function dan meneruskan permintaan ke `api.mail.tm`.
+Siap deploy ke Vercel tanpa konfigurasi tambahan. `app/api/mail/[...path]/route.ts`
+berjalan sebagai serverless function.
 
 ```bash
 vercel --prod
@@ -61,22 +84,31 @@ vercel --prod
 
 Tidak ada environment variable yang dibutuhkan.
 
+### Catatan IP datacenter
+
+Provider tempmail membatasi IP datacenter. Dari jaringan rumah request bisa lolos,
+sementara dari egress serverless kadang dijawab 500 kosong. Karena itu proxy punya
+retry dengan backoff, probe `/api/mail/health`, dan fallback otomatis antar provider.
+Kalau kedua provider sedang menolak, UI menyebutkan penyebabnya alih-alih gagal diam-diam.
+
 ## Endpoint proxy
 
-| Method | Path                    | Diteruskan ke                    |
-| ------ | ----------------------- | -------------------------------- |
-| GET    | `/api/mail/domains`     | `GET /domains`                   |
-| POST   | `/api/mail/accounts`    | `POST /accounts`                 |
-| POST   | `/api/mail/token`       | `POST /token`                    |
-| GET    | `/api/mail/messages`    | `GET /messages` (Bearer token)   |
-| GET    | `/api/mail/messages/:id`| `GET /messages/:id`              |
+| Method     | Path                          | Diteruskan ke                     |
+| ---------- | ----------------------------- | --------------------------------- |
+| GET        | `/api/mail/health`            | probe semua provider              |
+| GET        | `/api/mail/:p/domains`        | `GET :base/domains`               |
+| POST       | `/api/mail/:p/accounts`       | `POST :base/accounts`             |
+| POST       | `/api/mail/:p/token`          | `POST :base/token`                |
+| GET        | `/api/mail/:p/messages`       | `GET :base/messages` (Bearer)     |
+| GET        | `/api/mail/:p/messages/:id`   | `GET :base/messages/:id`          |
+| PATCH      | `/api/mail/:p/messages/:id`   | `PATCH :base/messages/:id`        |
 
-Hanya segmen pertama (`domains`, `accounts`, `token`, `messages`) yang diizinkan — request ke path lain ditolak `403`.
+`:p` = `mailtm` (api.mail.tm) atau `mailgw` (api.mail.gw).
 
-## Alur API (mail.tm)
+## Alur API (mail.tm / mail.gw)
 
 1. `GET /domains` → ambil domain `isActive: true`.
 2. `POST /accounts { address, password }` → buat akun.
 3. `POST /token { address, password }` → token JWT.
-4. `GET /messages` (header `Authorization: Bearer <token>`) → polling 10 detik.
+4. `GET /messages?page=1` (header `Authorization: Bearer ***`) → polling 10 detik.
 5. `GET /messages/{id}` → isi lengkap (`text` + `html`).

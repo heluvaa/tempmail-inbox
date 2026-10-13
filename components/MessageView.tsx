@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ProviderId } from "@/lib/providers";
 import type { MessageDetail } from "@/lib/types";
 import {
   extractCodes,
@@ -20,6 +21,7 @@ import {
 } from "./icons";
 
 type Props = {
+  provider: ProviderId;
   token: string;
   messageId: string;
   seed?: Partial<MessageDetail>;
@@ -27,7 +29,7 @@ type Props = {
   onCopied: (text: string, label: string) => void;
 };
 
-export default function MessageView({ token, messageId, seed, onBack, onCopied }: Props) {
+export default function MessageView({ provider, token, messageId, seed, onBack, onCopied }: Props) {
   const [msg, setMsg] = useState<MessageDetail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [tab, setTab] = useState<"html" | "text">("html");
@@ -40,7 +42,7 @@ export default function MessageView({ token, messageId, seed, onBack, onCopied }
     (async () => {
       try {
         const { getMessage } = await import("@/lib/api");
-        const detail = await getMessage(token, messageId);
+        const detail = await getMessage(provider, token, messageId);
         if (!alive) return;
         setMsg(detail);
         setState("ready");
@@ -58,7 +60,7 @@ export default function MessageView({ token, messageId, seed, onBack, onCopied }
     return () => {
       alive = false;
     };
-  }, [token, messageId, seed]);
+  }, [provider, token, messageId, seed]);
 
   useEffect(() => {
     headingRef.current?.focus();

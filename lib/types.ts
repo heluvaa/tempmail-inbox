@@ -1,8 +1,11 @@
+import type { ProviderId } from "./providers";
+
 export type Account = {
   id: string;
   address: string;
   password: string;
   token: string;
+  provider: ProviderId;
   createdAt: number;
 };
 
@@ -27,3 +30,25 @@ export type MessageDetail = MessageSummary & {
 
 export type ToastKind = "ok" | "err" | "info";
 export type Toast = { id: number; kind: ToastKind; text: string };
+
+export type Mode = "menu" | "gen" | "bulk" | "inbox";
+
+export type LogLevel = "info" | "ok" | "warn" | "err";
+
+export type LogLine = {
+  t: number;
+  /** Label langkah, mis. "[3/20] Membuat tempmail…" */
+  msg: string;
+  level: LogLevel;
+};
+
+export type BulkResult = {
+  index: number;
+  address: string;
+  password: string;
+  provider: ProviderId;
+  createdAt: number;
+  /** true kalau alamat siap dipakai (akun + token berhasil dibuat). */
+  inboxReady: boolean;
+  error?: string;
+};

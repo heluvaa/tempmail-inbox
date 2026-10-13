@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <title>seed</title>
+  </head>
+  <body>
+    <pre id="out">seed…</pre>
+    <script>
+      // Alat uji: isi localStorage riwayat, lalu lompat ke mode lewat hash.
+      // Satu run chromium = satu profil ephemeral, jadi seed & app harus di
+      // run yang sama. Params: ?mode=inbox|gen|bulk|menu & accounts=<json sekali>
+      const q = new URLSearchParams(location.search);
+      const mode = q.get("mode") || "menu";
+      const accs = JSON.parse(q.get("accounts") || "[]");
+      localStorage.setItem("tempmail.accounts.v2", JSON.stringify(accs));
+      if (accs[0]) localStorage.setItem("tempmail.active.v2", accs[0].id);
+      document.getElementById("out").textContent =
+        "seeded " + accs.length + " accounts -> #" + mode;
+      location.replace("/#/" + mode);
+    </script>
+  </body>
+</html>

@@ -2,15 +2,15 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Tempmail Inbox — Email Sementara Gratis",
+  title: "Tempmail Suite — Email Sementara Gratis",
   description:
-    "Buat alamat email sementara dalam sekali klik. Terima pesan langsung di browser, tanpa daftar, tanpa password email pribadi.",
-  applicationName: "Tempmail Inbox",
-  keywords: ["tempmail", "email sementara", "disposable email", "inbox sementara"],
+    "Generator email sementara: buat satu alamat, buat banyak sekaligus dengan log langsung, atau baca kotak masuknya. Tanpa daftar, tanpa email pribadi.",
+  applicationName: "Tempmail Suite",
+  keywords: ["tempmail", "email sementara", "disposable email", "inbox sementara", "bulk tempmail"],
   openGraph: {
-    title: "Tempmail Inbox — Email Sementara Gratis",
+    title: "Tempmail Suite — Email Sementara Gratis",
     description:
-      "Alamat email sekali pakai, inbox langsung di browser. Cocok untuk verifikasi tanpa spam.",
+      "Alamat email sekali pakai: generator, bulk hingga 20 alamat, dan pembaca inbox otomatis.",
     type: "website",
   },
 };
